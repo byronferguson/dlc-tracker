@@ -127,18 +127,21 @@ let poller: ReturnType<typeof setTimeout> | undefined
 // How long to wait before the next poll, ramped to the round clock: results
 // trickle in slowly early and flood in near time / in overtime, so poll lazily
 // when there's lots of time left and tighten as it runs down — then idle once
-// every tracked player's result is in. Keeps the worker and upstream API quiet.
+// every tracked player's result is in. Thresholds scale off the round length
+// (fractions of the round remaining), so any format tunes itself.
 function pollDelayMs(): number {
   if (error.value) return 60_000
   if (!activeRound.value) return 180_000 // between rounds / event not in progress
   if (allResultsIn.value) return 300_000 // every tracked player is done this round
   const ms = timerMs.value
   if (ms == null) return pollSeconds * 1000 // no timer info → base cadence
-  const minLeft = ms / 60_000
-  if (minLeft > 15) return 180_000 // plenty of time — barely anything decided yet
-  if (minLeft > 5) return 120_000
-  if (minLeft > 2) return 75_000
-  if (minLeft > 0) return 45_000
+  const durMs = (event.value?.roundDurationMin || 50) * 60_000
+  const frac = ms / durMs // fraction of the round still on the clock (<0 = overtime)
+  const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
+  if (frac > 0.3) return clamp(durMs * 0.06, 90_000, 300_000) // plenty of time left
+  if (frac > 0.1) return clamp(durMs * 0.04, 75_000, 180_000)
+  if (frac > 0.04) return 75_000 // closing in
+  if (frac > 0) return 45_000 // final stretch
   return 30_000 // overtime — results landing fast
 }
 function scheduleNext() {
