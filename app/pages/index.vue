@@ -89,7 +89,18 @@ const agoText = computed(() => {
 
 // --- dashboard ---
 const found = computed(() => crew.value.filter((c) => c.found))
-const winning = computed(() => found.value.filter((c) => c.wins > c.losses).length)
+// the latest round any crew member has a result for
+const lastRound = computed(() => {
+  let max = 0
+  for (const c of found.value) for (const k of Object.keys(c.rounds)) max = Math.max(max, Number(k))
+  return max || null
+})
+// how many won that round (a bye counts as a win)
+const wonLast = computed(() => {
+  const r = lastRound.value
+  if (!r) return 0
+  return found.value.filter((c) => c.rounds[r] === 'W' || c.rounds[r] === 'B').length
+})
 const undefeated = computed(() => found.value.filter((c) => c.losses === 0 && c.wins + c.draws > 0).length)
 const leader = computed(() => found.value.find((c) => c.rank != null) ?? null)
 const crewBest = computed(() => (leader.value?.rank ? `#${leader.value.rank.toLocaleString()}` : '—'))
@@ -167,8 +178,8 @@ const startDate = 'Sat Jun 20, 2026'
         <div class="l">Illumineers found</div>
       </div>
       <div class="stat">
-        <div class="k teal">{{ winning }}</div>
-        <div class="l">Winning records</div>
+        <div class="k teal">{{ wonLast }}</div>
+        <div class="l">{{ lastRound ? 'Won round ' + lastRound : 'Won last round' }}</div>
       </div>
       <div class="stat">
         <div class="k">{{ undefeated }}</div>
