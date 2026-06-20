@@ -55,13 +55,16 @@ const timerState = computed<'running' | 'overtime' | 'paused' | 'off'>(() => {
   if (!e || e.timerEndsAt == null || (!e.timerRunning && e.timerPausedAt == null)) return 'off'
   if (e.timerPausedAt != null) return 'paused'
   // past zero the official clock keeps counting up into the negative ("overtime")
-  return (timerMs.value ?? 0) <= 0 ? 'overtime' : 'running'
+  return (timerMs.value ?? 0) < 0 ? 'overtime' : 'running'
 })
 const timerText = computed(() => {
   const ms = timerMs.value
   if (ms == null) return ''
+  // counting down: round up so "0:01" shows through the final second (matches a
+  // conventional clock and the official site). counting up in overtime: floor the
+  // elapsed time so it reads "-21:08" while 21:08 has elapsed.
   const neg = ms < 0
-  const s = Math.floor(Math.abs(ms) / 1000)
+  const s = neg ? Math.floor(-ms / 1000) : Math.ceil(ms / 1000)
   const h = Math.floor(s / 3600)
   const m = Math.floor((s % 3600) / 60)
   const sec = s % 60
