@@ -183,7 +183,22 @@ interface TimerInfo {
  * ("2026-06-20T15:36:59+00:00") — the same source the official UI uses — so we
  * scrape that first and fall back to the lossy REST field only if needed.
  */
+// Scraping the ~1 MB event page is the most expensive part of a rebuild, and the
+// round's end time barely changes within a round, so cache it for a while.
+let timerCache: { key: string; at: number; data: TimerInfo } | null = null
+const TIMER_TTL_MS = 90_000
+
 async function fetchTimer(rb: RbFetch, eventId: string): Promise<TimerInfo> {
+  const nowMs = Date.now()
+  if (timerCache && timerCache.key === eventId && nowMs - timerCache.at < TIMER_TTL_MS) {
+    return timerCache.data
+  }
+  const data = await fetchTimerUncached(rb, eventId)
+  timerCache = { key: eventId, at: nowMs, data }
+  return data
+}
+
+async function fetchTimerUncached(rb: RbFetch, eventId: string): Promise<TimerInfo> {
   try {
     const html = await $fetch<string>(`https://tcg.ravensburgerplay.com/events/${eventId}`, {
       headers: { 'user-agent': 'Mozilla/5.0 (dlc-tracker)' },
@@ -250,6 +265,42 @@ async function fetchEventState(rb: RbFetch, eventId: string): Promise<EventState
   }
 }
 
+// Minimal shape we keep from each match — drops everything we don't render so the
+// cache stays small and iteration stays cheap.
+interface SlimMatch {
+  table: number | null
+  status: string
+  bye: boolean
+  players: { n: string; w: boolean; g: number }[]
+}
+
+// Completed rounds never change, so cache their (slim) matches permanently; the
+// active round is re-fetched each rebuild. This keeps per-rebuild work to ~one round.
+const roundCache = new Map<string, SlimMatch[]>()
+
+async function getRoundSlim(rb: RbFetch, eventId: string, round: RoundInfo): Promise<SlimMatch[]> {
+  const cacheKey = `${eventId}:${round.id}`
+  if (round.status === 'COMPLETE' && roundCache.has(cacheKey)) return roundCache.get(cacheKey)!
+  let raw: any[] = []
+  try {
+    raw = await fetchAllPages<any>(rb, `/api/v2/player/events/${eventId}/tv/matches/?round_id=${round.id}`)
+  } catch {
+    return [] // round may 404 before pairings post
+  }
+  const slim: SlimMatch[] = raw.map((m) => ({
+    table: m?.table_number ?? null,
+    status: m?.status,
+    bye: !!m?.match_is_bye,
+    players: (Array.isArray(m?.players) ? m.players : []).map((p: any) => ({
+      n: p?.tv_display_name ?? '',
+      w: !!p?.is_winner,
+      g: p?.games_won ?? 0,
+    })),
+  }))
+  if (round.status === 'COMPLETE') roundCache.set(cacheKey, slim)
+  return slim
+}
+
 /** Build normName -> RoundMatch[] (opponent + game record per round) from each decided/active round. */
 async function fetchRoundMatches(
   rb: RbFetch,
@@ -262,35 +313,28 @@ async function fetchRoundMatches(
 
   await Promise.all(
     live.map(async (round) => {
-      let matches: any[] = []
-      try {
-        matches = await fetchAllPages<any>(rb, `/api/v2/player/events/${eventId}/tv/matches/?round_id=${round.id}`)
-      } catch {
-        return // round may 404 before pairings post; ignore
-      }
+      const matches = await getRoundSlim(rb, eventId, round)
       for (const m of matches) {
-        const players: any[] = Array.isArray(m?.players) ? m.players : []
-        const complete = m?.status === 'COMPLETE'
-        const someWinner = players.some((p) => p?.is_winner)
-        const bye = !!m?.match_is_bye
-        for (const p of players) {
-          const key = normName(p?.tv_display_name)
+        const complete = m.status === 'COMPLETE'
+        const someWinner = m.players.some((p) => p.w)
+        for (const p of m.players) {
+          const key = normName(p.n)
           if (!crewKeys.has(key)) continue
-          const opp = players.find((x) => normName(x?.tv_display_name) !== key)
+          const opp = m.players.find((x) => normName(x.n) !== key)
           let result: RoundResult
-          if (bye) result = 'B'
-          else if (p?.is_winner) result = 'W'
+          if (m.bye) result = 'B'
+          else if (p.w) result = 'W'
           else if (someWinner) result = 'L'
           else if (complete) result = 'D'
           else result = 'P'
           const entry: RoundMatch = {
             round: round.number,
-            table: m?.table_number ?? null,
-            opponent: bye ? null : opp?.tv_display_name ?? null,
-            gamesFor: p?.games_won ?? 0,
-            gamesAgainst: bye ? 0 : opp?.games_won ?? 0,
+            table: m.table,
+            opponent: m.bye ? null : opp?.n ?? null,
+            gamesFor: p.g,
+            gamesAgainst: m.bye ? 0 : opp?.g ?? 0,
             result,
-            bye,
+            bye: m.bye,
           }
           const list = byPlayer.get(key) ?? []
           list.push(entry)
@@ -299,7 +343,6 @@ async function fetchRoundMatches(
       }
     }),
   )
-  // keep each player's matches in round order
   for (const list of byPlayer.values()) list.sort((a, b) => a.round - b.round)
   return byPlayer
 }
@@ -355,7 +398,7 @@ export async function buildLedger(eventId: string): Promise<LedgerPayload> {
 
 // --- tiny in-memory cache so rapid polling doesn't hammer the upstream API ---
 let cache: { key: string; at: number; data: LedgerPayload } | null = null
-const TTL_MS = 20_000
+const TTL_MS = 30_000
 
 export async function getLedger(eventId: string, force = false): Promise<LedgerPayload> {
   const now = Date.now()

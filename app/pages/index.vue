@@ -31,24 +31,48 @@ async function reload(force = false) {
 // --- live clock for "updated N s ago" ---
 const now = ref(Date.now())
 let clock: ReturnType<typeof setInterval> | undefined
-let poller: ReturnType<typeof setInterval> | undefined
+let poller: ReturnType<typeof setTimeout> | undefined
 
+// How long to wait before the next poll, based on what's actually happening.
+// Backing off when nothing is changing keeps the worker (and the upstream API) idle.
+function pollDelayMs(): number {
+  if (error.value) return 60_000
+  if (!activeRound.value) return 150_000 // between rounds / event not in progress
+  if (allResultsIn.value) return 180_000 // every tracked player is done this round
+  return pollSeconds * 1000 // results still trickling in
+}
+function scheduleNext() {
+  clearTimeout(poller)
+  poller = setTimeout(async () => {
+    if (autoRefresh.value && document.visibilityState === 'visible') await reload(false)
+    if (autoRefresh.value) scheduleNext()
+  }, pollDelayMs())
+}
 function onVisible() {
-  // snap to current data the moment the tab comes back into view
-  if (autoRefresh.value && document.visibilityState === 'visible') reload(true)
+  // snap to current data when the tab returns, then re-evaluate the cadence
+  if (autoRefresh.value && document.visibilityState === 'visible') {
+    reload(false)
+    scheduleNext()
+  }
 }
 
 onMounted(() => {
   clock = setInterval(() => (now.value = Date.now()), 1000)
-  poller = setInterval(() => {
-    if (autoRefresh.value && document.visibilityState === 'visible') reload(true)
-  }, pollSeconds * 1000)
+  scheduleNext()
   document.addEventListener('visibilitychange', onVisible)
 })
 onBeforeUnmount(() => {
   clearInterval(clock)
-  clearInterval(poller)
+  clearTimeout(poller)
   document.removeEventListener('visibilitychange', onVisible)
+})
+watch(autoRefresh, (on) => {
+  if (on) {
+    reload(false)
+    scheduleNext()
+  } else {
+    clearTimeout(poller)
+  }
 })
 
 const event = computed(() => data.value?.event ?? null)
@@ -116,6 +140,30 @@ const wonLast = computed(() => {
   return found.value.filter((c) => c.rounds[r] === 'W' || c.rounds[r] === 'B').length
 })
 const undefeated = computed(() => found.value.filter((c) => c.losses === 0 && c.wins + c.draws > 0).length)
+
+// every tracked (found) player has a decided result for the active round
+const allResultsIn = computed(() => {
+  const r = activeRound.value
+  const fnd = found.value
+  if (!r || !fnd.length) return false
+  return fnd.every((c) => {
+    const v = c.rounds[r]
+    return !!v && v !== 'P'
+  })
+})
+const pollLabel = computed(() => {
+  if (!autoRefresh.value) return 'Auto'
+  if (activeRound.value && allResultsIn.value) return 'Auto · idle'
+  if (!activeRound.value) return 'Auto · slow'
+  return `Auto · ${pollSeconds}s`
+})
+const pollTitle = computed(() => {
+  if (!autoRefresh.value) return 'Auto-refresh is off'
+  if (activeRound.value && allResultsIn.value)
+    return `All tracked results are in for round ${activeRound.value} — checking occasionally for the next round`
+  if (!activeRound.value) return 'No active round — checking occasionally'
+  return `Refreshing about every ${pollSeconds}s while results come in`
+})
 const leader = computed(() => found.value.find((c) => c.rank != null) ?? null)
 const crewBest = computed(() => (leader.value?.rank ? `#${leader.value.rank.toLocaleString()}` : '—'))
 
@@ -234,10 +282,10 @@ const startDate = 'Sat Jun 20, 2026'
           <template v-if="data?.stale">cached · upstream unreachable</template>
           <template v-else>updated {{ agoText }}</template>
         </span>
-        <label class="toggle">
+        <label class="toggle" :title="pollTitle">
           <input type="checkbox" v-model="autoRefresh" />
           <span class="track"></span>
-          <span>Auto · {{ pollSeconds }}s</span>
+          <span>{{ pollLabel }}</span>
         </label>
         <button class="btn ghost" type="button" :disabled="refreshing" @click="reload(true)">
           <span v-if="refreshing" class="spin"></span>

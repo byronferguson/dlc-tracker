@@ -18,8 +18,9 @@ export default defineNuxtConfig({
     public: {
       // the event this tracker follows; override with NUXT_PUBLIC_EVENT_ID
       eventId: '508677',
-      // how often the page re-polls our /api/standings, in seconds
-      pollSeconds: 45,
+      // base poll cadence (seconds) while a round's results are still coming in;
+      // the client backs off automatically once all tracked results are in
+      pollSeconds: 60,
     },
   },
 
