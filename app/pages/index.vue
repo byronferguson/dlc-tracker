@@ -15,7 +15,14 @@ const autoRefresh = ref(true)
 async function reload(force = false) {
   refreshing.value = true
   try {
-    await refresh({ ...(force ? ({ query: { force: 1 } } as any) : {}) })
+    if (force) {
+      // bypass the server's short cache for an immediate, current snapshot
+      data.value = await $fetch<LedgerPayload>('/api/standings', { query: { force: 1 } })
+    } else {
+      await refresh()
+    }
+  } catch {
+    flash('Couldn’t refresh — showing last update')
   } finally {
     refreshing.value = false
   }
@@ -26,15 +33,22 @@ const now = ref(Date.now())
 let clock: ReturnType<typeof setInterval> | undefined
 let poller: ReturnType<typeof setInterval> | undefined
 
+function onVisible() {
+  // snap to current data the moment the tab comes back into view
+  if (autoRefresh.value && document.visibilityState === 'visible') reload(true)
+}
+
 onMounted(() => {
   clock = setInterval(() => (now.value = Date.now()), 1000)
   poller = setInterval(() => {
     if (autoRefresh.value && document.visibilityState === 'visible') reload(true)
   }, pollSeconds * 1000)
+  document.addEventListener('visibilitychange', onVisible)
 })
 onBeforeUnmount(() => {
   clearInterval(clock)
   clearInterval(poller)
+  document.removeEventListener('visibilitychange', onVisible)
 })
 
 const event = computed(() => data.value?.event ?? null)
@@ -106,15 +120,21 @@ const leader = computed(() => found.value.find((c) => c.rank != null) ?? null)
 const crewBest = computed(() => (leader.value?.rank ? `#${leader.value.rank.toLocaleString()}` : '—'))
 
 // --- helpers ---
-function inks(c: CrewStanding): string[] {
-  return c.liveInk && c.liveInk.length ? c.liveInk : [c.ink]
+function hasInk(c: CrewStanding): boolean {
+  return !!(c.liveInk && c.liveInk.length)
 }
 function sigilStyle(c: CrewStanding) {
-  const list = inks(c)
+  if (!hasInk(c)) return { background: 'rgba(154,163,200,0.3)' } // ink unknown (default avatar)
+  const list = c.liveInk
   if (list.length >= 2) {
     return { background: `linear-gradient(135deg, var(--${list[0]}) 0 50%, var(--${list[1]}) 50% 100%)` }
   }
-  return { background: `var(--${list[0]})`, boxShadow: `0 0 10px -2px var(--${list[0]})` }
+  return { background: `var(--${list[0]})` }
+}
+function inkTitle(c: CrewStanding): string {
+  if (!hasInk(c)) return 'Deck ink unknown'
+  const caps = c.liveInk.map((i) => i[0].toUpperCase() + i.slice(1))
+  return caps.join(' / ') + (caps.length > 1 ? ' inks' : ' ink')
 }
 function pct(v: number | null): string {
   return v == null ? '—' : `${Math.round(v * 100)}%`
@@ -279,7 +299,7 @@ const startDate = 'Sat Jun 20, 2026'
               <td class="col-who">
                 <div class="who">
                   <span class="caret" :class="{ open: expanded.has(c.tv) }" aria-hidden="true">▸</span>
-                  <span class="sigil" :class="{ duo: inks(c).length >= 2 }" :style="sigilStyle(c)"></span>
+                  <span class="sigil" :class="{ duo: (c.liveInk?.length || 0) >= 2 }" :style="sigilStyle(c)" :title="inkTitle(c)"></span>
                   <button class="copy" type="button" :title="`Copy ${c.playhub}`" @click.stop="copy(c.playhub, c.playhub)">
                     <span class="name">
                       {{ c.name }}
@@ -348,7 +368,7 @@ const startDate = 'Sat Jun 20, 2026'
         <span><i style="background:var(--pending);border:1px dashed var(--accent-2)"></i> Paired</span>
       </div>
       <span>·</span>
-      <span>OMW = opponents’ match-win %. Sigil = deck inks. Pulled live from
+      <span>OMW = opponents’ match-win %. Hexagon = deck ink. Pulled live from
         <a :href="eventUrl" target="_blank" rel="noopener">ravensburgerplay.com ↗</a>
       </span>
     </div>

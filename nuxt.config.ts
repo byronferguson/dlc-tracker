@@ -19,7 +19,7 @@ export default defineNuxtConfig({
       // the event this tracker follows; override with NUXT_PUBLIC_EVENT_ID
       eventId: '508677',
       // how often the page re-polls our /api/standings, in seconds
-      pollSeconds: 60,
+      pollSeconds: 45,
     },
   },
 

@@ -382,11 +382,12 @@ tbody tr:hover .col-rank, tbody tr:hover .col-who { background: #131a3a; }
 .row:hover .caret { color: var(--accent-2); }
 
 .who { display: flex; align-items: center; gap: 9px; min-width: 168px; }
+/* deck-ink emblem — hexagon (Lorcana ink gem) so it never reads as a status dot */
 .sigil {
-  width: 13px; height: 13px; border-radius: 50%;
+  width: 14px; height: 16px;
   flex: 0 0 auto;
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
 }
-.sigil.duo { width: 14px; height: 14px; }
 .who .name { font-weight: 600; line-height: 1.15; }
 .who .name .sub {
   display: block;
