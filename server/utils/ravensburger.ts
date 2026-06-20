@@ -46,6 +46,11 @@ export interface EventState {
   totalRounds: number
   activeRound: number | null
   rounds: RoundInfo[]
+  // round timer (epoch ms; null when not set)
+  timerRunning: boolean
+  timerEndsAt: number | null
+  timerPausedAt: number | null
+  roundDurationMin: number | null
 }
 
 export interface LedgerPayload {
@@ -80,6 +85,22 @@ const INK_NAMES = ['Amber', 'Amethyst', 'Emerald', 'Ruby', 'Sapphire', 'Steel']
 
 export function normName(s: string): string {
   return String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+/**
+ * Parse Ravensburger's loose timestamps to epoch ms.
+ * They come like "2026-06-20T09:07-0500" — sometimes missing seconds and with a
+ * colon-less offset, which Date can't parse reliably across runtimes.
+ */
+export function parseRbDate(s: string | null | undefined): number | null {
+  if (!s) return null
+  let v = String(s).trim()
+  // add seconds if only HH:MM is present after the T
+  v = v.replace(/T(\d{2}:\d{2})(?=[+\-Z]|$)/, 'T$1:00')
+  // add a colon to a 4-digit timezone offset (-0500 -> -05:00)
+  v = v.replace(/([+\-]\d{2})(\d{2})$/, '$1:$2')
+  const t = Date.parse(v)
+  return Number.isNaN(t) ? null : t
 }
 
 /** Split a profile image filename like "AmberSteel.webp" into ["amber","steel"]. */
@@ -138,7 +159,11 @@ async function fetchAllPages<T>(rb: RbFetch, basePath: string): Promise<T[]> {
 }
 
 async function fetchEventState(rb: RbFetch, eventId: string): Promise<EventState> {
-  const tv = await rb<any>(`/api/v2/player/events/${eventId}/tv/`)
+  // tv/ holds phases/rounds; the event detail holds the live round timer.
+  const [tv, detail] = await Promise.all([
+    rb<any>(`/api/v2/player/events/${eventId}/tv/`),
+    rb<any>(`/api/magic-events/${eventId}/`).catch(() => null),
+  ])
   const phases: any[] = Array.isArray(tv?.tournament_phases) ? tv.tournament_phases : []
   const activePhase = phases.find((p) => p?.status === 'IN_PROGRESS') ?? phases[phases.length - 1] ?? null
 
@@ -158,6 +183,10 @@ async function fetchEventState(rb: RbFetch, eventId: string): Promise<EventState
     totalRounds: activePhase?.number_of_rounds ?? rounds.length,
     activeRound: active?.number ?? null,
     rounds,
+    timerRunning: !!detail?.timer_is_running,
+    timerEndsAt: parseRbDate(detail?.timer_end_datetime),
+    timerPausedAt: parseRbDate(detail?.timer_paused_at_datetime),
+    roundDurationMin: detail?.settings?.round_duration_in_minutes ?? null,
   }
 }
 

@@ -163,6 +163,12 @@ h1 .city {
   justify-content: space-between;
   gap: 14px;
 }
+.controls-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
 .controls h2 {
   font-family: var(--serif);
   font-style: italic;
@@ -170,6 +176,52 @@ h1 .city {
   font-size: 22px;
   margin: 0;
   color: var(--text);
+}
+
+/* round countdown */
+.round-timer {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(70, 199, 201, 0.4);
+  background: rgba(70, 199, 201, 0.08);
+  color: var(--accent-2);
+}
+.round-timer .clock { font-size: 13px; align-self: center; }
+.round-timer .t {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.round-timer .lbl {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.round-timer.low {
+  border-color: rgba(224, 97, 122, 0.55);
+  background: rgba(224, 97, 122, 0.1);
+  color: var(--loss);
+  animation: timerPulse 1.6s ease-in-out infinite;
+}
+.round-timer.paused {
+  border-color: var(--line);
+  background: rgba(227, 178, 74, 0.08);
+  color: var(--accent);
+}
+.round-timer.ended {
+  border-color: rgba(224, 97, 122, 0.55);
+  background: rgba(224, 97, 122, 0.14);
+  color: var(--loss);
+}
+@keyframes timerPulse {
+  50% { border-color: rgba(224, 97, 122, 0.9); }
 }
 .ctl-group { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .updated {

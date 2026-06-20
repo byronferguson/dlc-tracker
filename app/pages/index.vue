@@ -42,6 +42,32 @@ const crew = computed<CrewStanding[]>(() => data.value?.crew ?? [])
 const rounds = computed(() => event.value?.rounds ?? [])
 const activeRound = computed(() => event.value?.activeRound ?? null)
 
+// --- round timer (ticks via the `now` clock below) ---
+const timerMs = computed<number | null>(() => {
+  const e = event.value
+  if (!e || e.timerEndsAt == null) return null
+  // when paused, the remaining time is frozen at the pause moment
+  if (e.timerPausedAt != null) return e.timerEndsAt - e.timerPausedAt
+  return e.timerEndsAt - now.value
+})
+const timerState = computed<'running' | 'paused' | 'ended' | 'off'>(() => {
+  const e = event.value
+  if (!e || e.timerEndsAt == null || (!e.timerRunning && e.timerPausedAt == null)) return 'off'
+  if (e.timerPausedAt != null) return 'paused'
+  return (timerMs.value ?? 0) <= 0 ? 'ended' : 'running'
+})
+const timerText = computed(() => {
+  const ms = timerMs.value
+  if (ms == null) return ''
+  const s = Math.max(0, Math.round(ms / 1000))
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const sec = s % 60
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`
+})
+const timerLow = computed(() => timerState.value === 'running' && (timerMs.value ?? Infinity) <= 120_000)
+
 const agoText = computed(() => {
   if (!data.value?.updatedAt) return ''
   const secs = Math.max(0, Math.round((now.value - new Date(data.value.updatedAt).getTime()) / 1000))
@@ -137,7 +163,26 @@ const startDate = 'Sat Jun 20, 2026'
     </section>
 
     <div class="controls">
-      <h2>The Ledger</h2>
+      <div class="controls-left">
+        <h2>The Ledger</h2>
+        <div
+          v-if="event && timerState !== 'off'"
+          class="round-timer"
+          :class="{ low: timerLow, paused: timerState === 'paused', ended: timerState === 'ended' }"
+          :title="`Round ${activeRound} timer`"
+        >
+          <span class="clock" aria-hidden="true">⏱</span>
+          <span class="t">
+            <template v-if="timerState === 'ended'">Time!</template>
+            <template v-else>{{ timerText }}</template>
+          </span>
+          <span class="lbl">
+            <template v-if="timerState === 'paused'">paused · R{{ activeRound }}</template>
+            <template v-else-if="timerState === 'ended'">in round {{ activeRound }}</template>
+            <template v-else>left in R{{ activeRound }}</template>
+          </span>
+        </div>
+      </div>
       <div class="ctl-group">
         <span class="updated" :class="{ stale: data?.stale }">
           <template v-if="data?.stale">cached · upstream unreachable</template>
