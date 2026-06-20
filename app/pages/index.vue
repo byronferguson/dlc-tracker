@@ -124,13 +124,22 @@ const now = ref(Date.now())
 let clock: ReturnType<typeof setInterval> | undefined
 let poller: ReturnType<typeof setTimeout> | undefined
 
-// How long to wait before the next poll, based on what's actually happening.
-// Backing off when nothing is changing keeps the worker (and the upstream API) idle.
+// How long to wait before the next poll, ramped to the round clock: results
+// trickle in slowly early and flood in near time / in overtime, so poll lazily
+// when there's lots of time left and tighten as it runs down — then idle once
+// every tracked player's result is in. Keeps the worker and upstream API quiet.
 function pollDelayMs(): number {
   if (error.value) return 60_000
-  if (!activeRound.value) return 150_000 // between rounds / event not in progress
-  if (allResultsIn.value) return 180_000 // every tracked player is done this round
-  return pollSeconds * 1000 // results still trickling in
+  if (!activeRound.value) return 180_000 // between rounds / event not in progress
+  if (allResultsIn.value) return 300_000 // every tracked player is done this round
+  const ms = timerMs.value
+  if (ms == null) return pollSeconds * 1000 // no timer info → base cadence
+  const minLeft = ms / 60_000
+  if (minLeft > 15) return 180_000 // plenty of time — barely anything decided yet
+  if (minLeft > 5) return 120_000
+  if (minLeft > 2) return 75_000
+  if (minLeft > 0) return 45_000
+  return 30_000 // overtime — results landing fast
 }
 function scheduleNext() {
   clearTimeout(poller)
@@ -278,14 +287,14 @@ const pollLabel = computed(() => {
   if (!autoRefresh.value) return 'Auto'
   if (activeRound.value && allResultsIn.value) return 'Auto · idle'
   if (!activeRound.value) return 'Auto · slow'
-  return `Auto · ${pollSeconds}s`
+  return `Auto · ${Math.round(pollDelayMs() / 1000)}s`
 })
 const pollTitle = computed(() => {
   if (!autoRefresh.value) return 'Auto-refresh is off'
   if (activeRound.value && allResultsIn.value)
-    return `All tracked results are in for round ${activeRound.value} — checking occasionally for the next round`
+    return `All tracked results are in for round ${activeRound.value} — checking every 5 min for the next round`
   if (!activeRound.value) return 'No active round — checking occasionally'
-  return `Refreshing about every ${pollSeconds}s while results come in`
+  return `Refreshing every ${Math.round(pollDelayMs() / 1000)}s — more often as the round clock winds down`
 })
 const leader = computed(() => found.value.find((c) => c.rank != null) ?? null)
 const crewBest = computed(() => (leader.value?.rank ? `#${leader.value.rank.toLocaleString()}` : '—'))
