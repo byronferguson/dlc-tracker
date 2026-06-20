@@ -158,11 +158,60 @@ async function fetchAllPages<T>(rb: RbFetch, basePath: string): Promise<T[]> {
   return out
 }
 
+interface TimerInfo {
+  running: boolean
+  endsAt: number | null
+  pausedAt: number | null
+  durationMin: number | null
+}
+
+/**
+ * The /api/magic-events REST field truncates timer_end_datetime to the whole
+ * minute (e.g. "10:36"), so a countdown built from it runs up to ~59s behind the
+ * official clock. The rendered event page embeds the full-precision value
+ * ("2026-06-20T15:36:59+00:00") — the same source the official UI uses — so we
+ * scrape that first and fall back to the lossy REST field only if needed.
+ */
+async function fetchTimer(rb: RbFetch, eventId: string): Promise<TimerInfo> {
+  try {
+    const html = await $fetch<string>(`https://tcg.ravensburgerplay.com/events/${eventId}`, {
+      headers: { 'user-agent': 'Mozilla/5.0 (dlc-tracker)' },
+      responseType: 'text',
+      timeout: 20000,
+      retry: 1,
+    })
+    const end = /timer_end_datetime\\?":\\?"([0-9T:+\-]+)/.exec(html)
+    if (end) {
+      const paused = /timer_paused_at_datetime\\?":\\?"([0-9T:+\-]+)/.exec(html)
+      const dur = /round_duration_in_minutes\\?":(\d+)/.exec(html)
+      return {
+        running: /timer_is_running\\?":true/.test(html),
+        endsAt: parseRbDate(end[1]),
+        pausedAt: paused ? parseRbDate(paused[1]) : null,
+        durationMin: dur ? Number(dur[1]) : null,
+      }
+    }
+  } catch {
+    // fall through to the REST field
+  }
+  try {
+    const d = await rb<any>(`/api/magic-events/${eventId}/`)
+    return {
+      running: !!d?.timer_is_running,
+      endsAt: parseRbDate(d?.timer_end_datetime),
+      pausedAt: parseRbDate(d?.timer_paused_at_datetime),
+      durationMin: d?.settings?.round_duration_in_minutes ?? null,
+    }
+  } catch {
+    return { running: false, endsAt: null, pausedAt: null, durationMin: null }
+  }
+}
+
 async function fetchEventState(rb: RbFetch, eventId: string): Promise<EventState> {
-  // tv/ holds phases/rounds; the event detail holds the live round timer.
-  const [tv, detail] = await Promise.all([
+  // tv/ holds phases/rounds; the rendered page holds the precise round timer.
+  const [tv, timer] = await Promise.all([
     rb<any>(`/api/v2/player/events/${eventId}/tv/`),
-    rb<any>(`/api/magic-events/${eventId}/`).catch(() => null),
+    fetchTimer(rb, eventId),
   ])
   const phases: any[] = Array.isArray(tv?.tournament_phases) ? tv.tournament_phases : []
   const activePhase = phases.find((p) => p?.status === 'IN_PROGRESS') ?? phases[phases.length - 1] ?? null
@@ -183,10 +232,10 @@ async function fetchEventState(rb: RbFetch, eventId: string): Promise<EventState
     totalRounds: activePhase?.number_of_rounds ?? rounds.length,
     activeRound: active?.number ?? null,
     rounds,
-    timerRunning: !!detail?.timer_is_running,
-    timerEndsAt: parseRbDate(detail?.timer_end_datetime),
-    timerPausedAt: parseRbDate(detail?.timer_paused_at_datetime),
-    roundDurationMin: detail?.settings?.round_duration_in_minutes ?? null,
+    timerRunning: timer.running,
+    timerEndsAt: timer.endsAt,
+    timerPausedAt: timer.pausedAt,
+    roundDurationMin: timer.durationMin,
   }
 }
 
