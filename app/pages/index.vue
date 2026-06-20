@@ -120,7 +120,7 @@ const startDate = 'Sat Jun 20, 2026'
     <section class="dash" aria-label="Crew summary">
       <div class="stat">
         <div class="k">{{ found.length }}<span style="font-size:0.5em;color:var(--faint)"> / {{ crew.length || 15 }}</span></div>
-        <div class="l">Inklings found</div>
+        <div class="l">Illumineers found</div>
       </div>
       <div class="stat">
         <div class="k teal">{{ winning }}</div>
@@ -170,7 +170,7 @@ const startDate = 'Sat Jun 20, 2026'
         <thead>
           <tr>
             <th class="c col-rank">#</th>
-            <th class="col-who">Inkling</th>
+            <th class="col-who">Illumineer</th>
             <th class="c">Record</th>
             <th class="c">Pts</th>
             <th class="c">OMW</th>
