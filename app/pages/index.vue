@@ -260,14 +260,16 @@ const wonLast = computed(() => {
   if (!r) return 0
   return found.value.filter((c) => c.rounds[r] === 'W' || c.rounds[r] === 'B').length
 })
-const undefeated = computed(() => found.value.filter((c) => c.losses === 0 && c.wins + c.draws > 0).length)
+const undefeated = computed(
+  () => found.value.filter((c) => !c.dropped && c.losses === 0 && c.wins + c.draws > 0).length,
+)
 
-// every tracked (found) player has a decided result for the active round
+// every still-active (non-dropped) tracked player has a decided result this round
 const allResultsIn = computed(() => {
   const r = activeRound.value
-  const fnd = found.value
-  if (!r || !fnd.length) return false
-  return fnd.every((c) => {
+  const active = found.value.filter((c) => !c.dropped)
+  if (!r || !active.length) return false
+  return active.every((c) => {
     const v = c.rounds[r]
     return !!v && v !== 'P'
   })
@@ -511,7 +513,7 @@ const startDate = computed(() => {
           <template v-for="c in crew" :key="c.username">
             <tr
               class="row"
-              :class="{ missing: !c.found, open: expanded.has(c.username) }"
+              :class="{ missing: !c.found, dropped: c.dropped, open: expanded.has(c.username) }"
               :aria-expanded="expanded.has(c.username)"
               tabindex="0"
               @click="toggleRow(c.username)"
@@ -534,7 +536,7 @@ const startDate = computed(() => {
                   <span class="sigil" :class="{ duo: (c.liveInk?.length || 0) >= 2 }" :style="sigilStyle(c)" :title="inkTitle(c)"></span>
                   <button class="copy" type="button" :title="`Copy ${c.username}`" @click.stop="copy(c.username, c.username)">
                     <span class="name">
-                      {{ c.name }}
+                      {{ c.name }}<span v-if="c.dropped" class="drop-tag" title="Dropped from the event">dropped</span>
                       <span class="sub">{{ c.username }}</span>
                     </span>
                   </button>

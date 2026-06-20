@@ -39,6 +39,7 @@ export interface CrewStanding {
   oppMatchWinPct: number | null
   gameWinPct: number | null
   liveInk: string[]
+  dropped: boolean // registration_status === DROPPED
   rounds: Record<number, RoundResult>
   matches: RoundMatch[]
 }
@@ -327,6 +328,7 @@ interface SlimStanding {
   omwp: number | null
   gwp: number | null
   ink: string[]
+  dropped: boolean
 }
 
 interface EventRaw {
@@ -361,6 +363,7 @@ async function buildEventRaw(eventId: string): Promise<EventRaw> {
       omwp: s?.opponent_match_win_percentage ?? null,
       gwp: s?.game_win_percentage ?? null,
       ink: inksFromImage(s?.profile_image_url),
+      dropped: s?.registration_status === 'DROPPED',
     })
   }
 
@@ -433,6 +436,7 @@ export async function getLedger(
       oppMatchWinPct: s?.omwp ?? null,
       gameWinPct: s?.gwp ?? null,
       liveInk: s?.ink ?? [],
+      dropped: s?.dropped ?? false,
       rounds,
       matches,
     }
