@@ -367,7 +367,21 @@ tbody tr:hover .col-rank, tbody tr:hover .col-who { background: #131a3a; }
 .rank.top { color: var(--accent); font-weight: 700; }
 .rank .of { display: block; font-size: 9px; color: var(--faint); letter-spacing: 0.04em; }
 
-.who { display: flex; align-items: center; gap: 11px; min-width: 168px; }
+.row { cursor: pointer; }
+.row:focus-visible { outline: 2px solid var(--accent-2); outline-offset: -2px; }
+.row.open .col-rank, .row.open .col-who { background: #131a3a; }
+.row.open td { background: rgba(70, 199, 201, 0.05); }
+
+.caret {
+  color: var(--faint);
+  font-size: 10px;
+  transition: transform 0.15s ease, color 0.15s ease;
+  flex: 0 0 auto;
+}
+.caret.open { transform: rotate(90deg); color: var(--accent-2); }
+.row:hover .caret { color: var(--accent-2); }
+
+.who { display: flex; align-items: center; gap: 9px; min-width: 168px; }
 .sigil {
   width: 13px; height: 13px; border-radius: 50%;
   flex: 0 0 auto;
@@ -440,6 +454,68 @@ tbody tr:hover .col-rank, tbody tr:hover .col-who { background: #131a3a; }
 .cell-mark[data-v="D"] { background: rgba(138, 148, 166, 0.15); color: var(--draw); border-color: rgba(138, 148, 166, 0.45); }
 .cell-mark[data-v="B"] { background: rgba(227, 178, 74, 0.16); color: var(--bye); border-color: rgba(227, 178, 74, 0.5); }
 .cell-mark[data-v="P"] { color: var(--accent-2); border-color: rgba(70, 199, 201, 0.4); border-style: dashed; }
+
+/* ---------- Expanded match history ---------- */
+.detail-row td { padding: 0; background: var(--ground-2); border-bottom: 1px solid var(--line-soft); }
+.detail {
+  position: sticky;
+  left: 0;
+  width: 740px;
+  max-width: 92vw;
+  padding: 14px 18px 18px;
+}
+.detail-title {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+.detail-title .sub { color: var(--faint); text-transform: none; letter-spacing: 0; }
+.detail-empty {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--faint);
+}
+.match-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.match {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--line-soft);
+}
+.match .m-round {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+  width: 26px;
+  flex: 0 0 auto;
+}
+.match .m-res { width: 26px; height: 26px; font-size: 11px; }
+.match .m-vs { flex: 1 1 auto; min-width: 0; color: var(--muted); }
+.match .m-vs b { color: var(--text); font-weight: 600; }
+.match .m-vs em { color: var(--accent-2); font-style: normal; font-family: var(--mono); font-size: 11px; }
+.match .m-score {
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--text);
+  letter-spacing: 0.03em;
+  flex: 0 0 auto;
+}
+.match .m-score .g { font-size: 10px; color: var(--faint); letter-spacing: 0.04em; }
+.match .m-table {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+  flex: 0 0 auto;
+}
 
 /* ---------- States ---------- */
 .notice {

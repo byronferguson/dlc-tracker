@@ -9,6 +9,16 @@
 
 export type RoundResult = 'W' | 'L' | 'D' | 'B' | 'P' // P = paired, not yet decided
 
+export interface RoundMatch {
+  round: number
+  table: number | null
+  opponent: string | null // null for a bye
+  gamesFor: number
+  gamesAgainst: number
+  result: RoundResult
+  bye: boolean
+}
+
 export interface CrewMember {
   name: string // the person's first name, how we refer to them
   playhub: string // their PlayHub login handle
@@ -29,6 +39,7 @@ export interface CrewStanding extends CrewMember {
   gameWinPct: number | null
   liveInk: string[] // ink colours parsed from the official profile image, if any
   rounds: Record<number, RoundResult>
+  matches: RoundMatch[] // per-round opponent + game record, for the expanded view
 }
 
 export interface RoundInfo {
@@ -239,14 +250,14 @@ async function fetchEventState(rb: RbFetch, eventId: string): Promise<EventState
   }
 }
 
-/** Build normName -> { roundNumber: result } from each decided/active round's matches. */
-async function fetchRoundResults(
+/** Build normName -> RoundMatch[] (opponent + game record per round) from each decided/active round. */
+async function fetchRoundMatches(
   rb: RbFetch,
   eventId: string,
   rounds: RoundInfo[],
   crewKeys: Set<string>,
-): Promise<Map<string, Record<number, RoundResult>>> {
-  const byPlayer = new Map<string, Record<number, RoundResult>>()
+): Promise<Map<string, RoundMatch[]>> {
+  const byPlayer = new Map<string, RoundMatch[]>()
   const live = rounds.filter((r) => r.status === 'COMPLETE' || r.status === 'IN_PROGRESS')
 
   await Promise.all(
@@ -261,22 +272,35 @@ async function fetchRoundResults(
         const players: any[] = Array.isArray(m?.players) ? m.players : []
         const complete = m?.status === 'COMPLETE'
         const someWinner = players.some((p) => p?.is_winner)
+        const bye = !!m?.match_is_bye
         for (const p of players) {
           const key = normName(p?.tv_display_name)
           if (!crewKeys.has(key)) continue
-          let res: RoundResult
-          if (m?.match_is_bye) res = 'B'
-          else if (p?.is_winner) res = 'W'
-          else if (someWinner) res = 'L'
-          else if (complete) res = 'D'
-          else res = 'P'
-          const rec = byPlayer.get(key) ?? {}
-          rec[round.number] = res
-          byPlayer.set(key, rec)
+          const opp = players.find((x) => normName(x?.tv_display_name) !== key)
+          let result: RoundResult
+          if (bye) result = 'B'
+          else if (p?.is_winner) result = 'W'
+          else if (someWinner) result = 'L'
+          else if (complete) result = 'D'
+          else result = 'P'
+          const entry: RoundMatch = {
+            round: round.number,
+            table: m?.table_number ?? null,
+            opponent: bye ? null : opp?.tv_display_name ?? null,
+            gamesFor: p?.games_won ?? 0,
+            gamesAgainst: bye ? 0 : opp?.games_won ?? 0,
+            result,
+            bye,
+          }
+          const list = byPlayer.get(key) ?? []
+          list.push(entry)
+          byPlayer.set(key, list)
         }
       }
     }),
   )
+  // keep each player's matches in round order
+  for (const list of byPlayer.values()) list.sort((a, b) => a.round - b.round)
   return byPlayer
 }
 
@@ -292,12 +316,15 @@ export async function buildLedger(eventId: string): Promise<LedgerPayload> {
   const standingByKey = new Map<string, any>()
   for (const s of standings) standingByKey.set(normName(s?.tv_display_name), s)
 
-  const roundResults = await fetchRoundResults(rb, eventId, event.rounds, crewKeys)
+  const matchesByKey = await fetchRoundMatches(rb, eventId, event.rounds, crewKeys)
 
   const crew: CrewStanding[] = ROSTER.map((m) => {
     const key = normName(m.tv)
     const s = standingByKey.get(key)
     const liveInk = inksFromImage(s?.profile_image_url)
+    const matches = matchesByKey.get(key) ?? []
+    const rounds: Record<number, RoundResult> = {}
+    for (const mm of matches) rounds[mm.round] = mm.result
     return {
       ...m,
       found: !!s,
@@ -310,7 +337,8 @@ export async function buildLedger(eventId: string): Promise<LedgerPayload> {
       oppMatchWinPct: s ? s.opponent_match_win_percentage ?? null : null,
       gameWinPct: s ? s.game_win_percentage ?? null : null,
       liveInk,
-      rounds: roundResults.get(key) ?? {},
+      rounds,
+      matches,
     }
   })
 

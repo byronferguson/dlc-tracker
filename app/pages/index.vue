@@ -110,6 +110,14 @@ function pct(v: number | null): string {
 }
 const roundLabel: Record<RoundResult, string> = { W: 'W', L: 'L', D: 'D', B: 'BYE', P: '·' }
 
+// --- accordion: expanded rows (by tv display name) ---
+const expanded = ref<Set<string>>(new Set())
+function toggleRow(key: string) {
+  const next = new Set(expanded.value)
+  next.has(key) ? next.delete(key) : next.add(key)
+  expanded.value = next
+}
+
 // --- copy + toast ---
 const toast = ref('')
 let toastT: ReturnType<typeof setTimeout> | undefined
@@ -237,52 +245,85 @@ const startDate = 'Sat Jun 20, 2026'
           </tr>
         </thead>
         <tbody>
-          <tr v-for="c in crew" :key="c.tv" :class="{ missing: !c.found }">
-            <td class="c col-rank">
-              <div class="rank" :class="{ top: c.rank != null && c.rank <= 100 }">
-                <template v-if="c.rank">
-                  <span class="big">{{ c.rank.toLocaleString() }}</span>
-                  <span class="of">of {{ (event?.startingPlayers || 1746).toLocaleString() }}</span>
-                </template>
-                <template v-else>—</template>
-              </div>
-            </td>
-
-            <td class="col-who">
-              <button class="copy" type="button" :title="`Copy ${c.playhub}`" @click="copy(c.playhub, c.playhub)">
-                <span class="who">
-                  <span class="sigil" :class="{ duo: inks(c).length >= 2 }" :style="sigilStyle(c)"></span>
-                  <span class="name">
-                    {{ c.name }}
-                    <span class="sub">{{ c.playhub }}</span>
-                  </span>
-                </span>
-              </button>
-            </td>
-
-            <td class="c">
-              <span class="record">
-                <span class="w">{{ c.wins }}</span>–<span class="l">{{ c.losses }}</span><template v-if="c.draws">–<span class="d">{{ c.draws }}</span></template>
-              </span>
-            </td>
-
-            <td class="pts">
-              {{ c.points }}<span class="x"> pt{{ c.points === 1 ? '' : 's' }}</span>
-            </td>
-
-            <td class="tb">{{ pct(c.oppMatchWinPct) }}</td>
-
-            <td
-              v-for="r in rounds"
-              :key="r.id"
-              class="c cell"
-              :class="{ active: r.number === activeRound }"
+          <template v-for="c in crew" :key="c.tv">
+            <tr
+              class="row"
+              :class="{ missing: !c.found, open: expanded.has(c.tv) }"
+              :aria-expanded="expanded.has(c.tv)"
+              tabindex="0"
+              @click="toggleRow(c.tv)"
+              @keydown.enter.prevent="toggleRow(c.tv)"
+              @keydown.space.prevent="toggleRow(c.tv)"
             >
-              <span class="cell-mark" :data-v="c.rounds[r.number] || ''">
-                {{ c.rounds[r.number] ? roundLabel[c.rounds[r.number]] : '' }}
-              </span>
-            </td>
-          </tr>
+              <td class="c col-rank">
+                <div class="rank" :class="{ top: c.rank != null && c.rank <= 100 }">
+                  <template v-if="c.rank">
+                    <span class="big">{{ c.rank.toLocaleString() }}</span>
+                    <span class="of">of {{ (event?.startingPlayers || 1746).toLocaleString() }}</span>
+                  </template>
+                  <template v-else>—</template>
+                </div>
+              </td>
+
+              <td class="col-who">
+                <div class="who">
+                  <span class="caret" :class="{ open: expanded.has(c.tv) }" aria-hidden="true">▸</span>
+                  <span class="sigil" :class="{ duo: inks(c).length >= 2 }" :style="sigilStyle(c)"></span>
+                  <button class="copy" type="button" :title="`Copy ${c.playhub}`" @click.stop="copy(c.playhub, c.playhub)">
+                    <span class="name">
+                      {{ c.name }}
+                      <span class="sub">{{ c.playhub }}</span>
+                    </span>
+                  </button>
+                </div>
+              </td>
+
+              <td class="c">
+                <span class="record">
+                  <span class="w">{{ c.wins }}</span>–<span class="l">{{ c.losses }}</span><template v-if="c.draws">–<span class="d">{{ c.draws }}</span></template>
+                </span>
+              </td>
+
+              <td class="pts">
+                {{ c.points }}<span class="x"> pt{{ c.points === 1 ? '' : 's' }}</span>
+              </td>
+
+              <td class="tb">{{ pct(c.oppMatchWinPct) }}</td>
+
+              <td
+                v-for="r in rounds"
+                :key="r.id"
+                class="c cell"
+                :class="{ active: r.number === activeRound }"
+              >
+                <span class="cell-mark" :data-v="c.rounds[r.number] || ''">
+                  {{ c.rounds[r.number] ? roundLabel[c.rounds[r.number]] : '' }}
+                </span>
+              </td>
+            </tr>
+
+            <tr v-if="expanded.has(c.tv)" class="detail-row">
+              <td :colspan="5 + rounds.length">
+                <div class="detail">
+                  <div class="detail-title">Match history · {{ c.name }} <span class="sub">{{ c.tv }}</span></div>
+                  <div v-if="!c.matches.length" class="detail-empty">No matches reported yet.</div>
+                  <ol v-else class="match-list">
+                    <li v-for="mm in c.matches" :key="mm.round" class="match">
+                      <span class="m-round">R{{ mm.round }}</span>
+                      <span class="cell-mark m-res" :data-v="mm.result">{{ roundLabel[mm.result] }}</span>
+                      <span class="m-vs">
+                        <template v-if="mm.bye"><b>Bye</b></template>
+                        <template v-else>vs <b>{{ mm.opponent || 'TBD' }}</b></template>
+                        <em v-if="mm.result === 'P'"> · in progress</em>
+                      </span>
+                      <span v-if="!mm.bye" class="m-score">{{ mm.gamesFor }}–{{ mm.gamesAgainst }} <span class="g">games</span></span>
+                      <span v-if="mm.table" class="m-table">Table {{ mm.table }}</span>
+                    </li>
+                  </ol>
+                </div>
+              </td>
+            </tr>
+          </template>
         </tbody>
       </table>
     </div>
