@@ -1,0 +1,36 @@
+{
+  "name": "dlc-tracker",
+  "private": true,
+  "type": "module",
+  "description": "Live crew standings tracker for Ravensburger Play Lorcana events",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare",
+    "typecheck": "nuxt typecheck"
+  },
+  "dependencies": {
+    "nuxt": "^4.0.0",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vue-tsc": "^2.2.0"
+  },
+  "pnpm": {
+    "supportedArchitectures": {
+      "os": [
+        "darwin",
+        "linux",
+        "current"
+      ],
+      "cpu": [
+        "arm64",
+        "x64"
+      ]
+    }
+  }
+}

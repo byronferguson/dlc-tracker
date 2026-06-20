@@ -1,0 +1,9 @@
+name = "dlc-tracker"
+compatibility_date = "2025-06-01"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = "dist"
+
+# Optional: point the tracker at a different event without rebuilding.
+# [vars]
+# NUXT_PUBLIC_EVENT_ID = "508677"
+# NUXT_PUBLIC_POLL_SECONDS = "60"
