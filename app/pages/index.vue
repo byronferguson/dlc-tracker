@@ -50,23 +50,30 @@ const timerMs = computed<number | null>(() => {
   if (e.timerPausedAt != null) return e.timerEndsAt - e.timerPausedAt
   return e.timerEndsAt - now.value
 })
-const timerState = computed<'running' | 'paused' | 'ended' | 'off'>(() => {
+const timerState = computed<'running' | 'overtime' | 'paused' | 'off'>(() => {
   const e = event.value
   if (!e || e.timerEndsAt == null || (!e.timerRunning && e.timerPausedAt == null)) return 'off'
   if (e.timerPausedAt != null) return 'paused'
-  return (timerMs.value ?? 0) <= 0 ? 'ended' : 'running'
+  // past zero the official clock keeps counting up into the negative ("overtime")
+  return (timerMs.value ?? 0) <= 0 ? 'overtime' : 'running'
 })
 const timerText = computed(() => {
   const ms = timerMs.value
   if (ms == null) return ''
-  const s = Math.max(0, Math.round(ms / 1000))
+  const neg = ms < 0
+  const s = Math.floor(Math.abs(ms) / 1000)
   const h = Math.floor(s / 3600)
   const m = Math.floor((s % 3600) / 60)
   const sec = s % 60
   const pad = (n: number) => String(n).padStart(2, '0')
-  return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`
+  const body = h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`
+  return neg ? `-${body}` : body
 })
-const timerLow = computed(() => timerState.value === 'running' && (timerMs.value ?? Infinity) <= 120_000)
+// red + pulsing once the round is in its final 2 minutes or has gone overtime
+const timerLow = computed(() => {
+  const st = timerState.value
+  return (st === 'running' && (timerMs.value ?? Infinity) <= 120_000) || st === 'overtime'
+})
 
 const agoText = computed(() => {
   if (!data.value?.updatedAt) return ''
@@ -168,17 +175,14 @@ const startDate = 'Sat Jun 20, 2026'
         <div
           v-if="event && timerState !== 'off'"
           class="round-timer"
-          :class="{ low: timerLow, paused: timerState === 'paused', ended: timerState === 'ended' }"
+          :class="{ low: timerLow, paused: timerState === 'paused' }"
           :title="`Round ${activeRound} timer`"
         >
           <span class="clock" aria-hidden="true">⏱</span>
-          <span class="t">
-            <template v-if="timerState === 'ended'">Time!</template>
-            <template v-else>{{ timerText }}</template>
-          </span>
+          <span class="t">{{ timerText }}</span>
           <span class="lbl">
             <template v-if="timerState === 'paused'">paused · R{{ activeRound }}</template>
-            <template v-else-if="timerState === 'ended'">in round {{ activeRound }}</template>
+            <template v-else-if="timerState === 'overtime'">over · R{{ activeRound }}</template>
             <template v-else>left in R{{ activeRound }}</template>
           </span>
         </div>

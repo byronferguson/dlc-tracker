@@ -215,11 +215,6 @@ h1 .city {
   background: rgba(227, 178, 74, 0.08);
   color: var(--accent);
 }
-.round-timer.ended {
-  border-color: rgba(224, 97, 122, 0.55);
-  background: rgba(224, 97, 122, 0.14);
-  color: var(--loss);
-}
 @keyframes timerPulse {
   50% { border-color: rgba(224, 97, 122, 0.9); }
 }
