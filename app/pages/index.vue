@@ -1,11 +1,28 @@
 <script setup lang="ts">
 import type { LedgerPayload, CrewStanding, RoundResult } from '~~/server/utils/ravensburger'
+import { DEFAULT_EVENT_ID, DEFAULT_PLAYERS, type TrackedPlayer } from '#shared/defaults'
 
-const config = useRuntimeConfig()
-const pollSeconds = Number(config.public.pollSeconds) || 60
-const eventUrl = `https://tcg.ravensburgerplay.com/events/${config.public.eventId}`
+const runtime = useRuntimeConfig()
+const pollSeconds = Number(runtime.public.pollSeconds) || 60
+
+interface TrackerConfig {
+  eventId: string
+  players: TrackedPlayer[]
+}
+const STORAGE_KEY = 'dlc-tracker-config'
+
+// The tracked event + players live in the browser (localStorage) and ride along
+// with each request — no database. Defaults are the original crew.
+const config = useState<TrackerConfig>('cfg', () => ({
+  eventId: DEFAULT_EVENT_ID,
+  players: DEFAULT_PLAYERS.map((p) => ({ ...p })),
+}))
+const eventUrl = computed(() => `https://tcg.ravensburgerplay.com/events/${config.value.eventId}`)
 
 const { data, pending, error, refresh } = await useFetch<LedgerPayload>('/api/standings', {
+  method: 'POST',
+  body: config,
+  watch: [config],
   key: 'ledger',
 })
 
@@ -17,7 +34,10 @@ async function reload(force = false) {
   try {
     if (force) {
       // bypass the server's short cache for an immediate, current snapshot
-      data.value = await $fetch<LedgerPayload>('/api/standings', { query: { force: 1 } })
+      data.value = await $fetch<LedgerPayload>('/api/standings', {
+        method: 'POST',
+        body: { ...config.value, force: true },
+      })
     } else {
       await refresh()
     }
@@ -26,6 +46,77 @@ async function reload(force = false) {
   } finally {
     refreshing.value = false
   }
+}
+
+// ---- config management (event id + tracked players) ----
+const showConfig = ref(false)
+const eventDraft = ref('')
+const addName = ref('')
+const addUser = ref('')
+const csvText = ref('')
+
+function openConfig() {
+  eventDraft.value = config.value.eventId
+  showConfig.value = !showConfig.value
+}
+function parseEventId(input: string): string {
+  const m = input.match(/events\/(\d+)/) || input.match(/(\d{3,})/)
+  return m ? m[1] : ''
+}
+function applyEvent() {
+  const id = parseEventId(eventDraft.value.trim())
+  if (!id) return flash('Enter a valid event ID or URL')
+  if (id === config.value.eventId) return flash('Already tracking that event')
+  config.value = { ...config.value, eventId: id }
+  flash(`Tracking event ${id}`)
+}
+const normUser = (u: string) => u.toLowerCase().replace(/[^a-z0-9]/g, '')
+function mergePlayers(existing: TrackedPlayer[], incoming: TrackedPlayer[]): TrackedPlayer[] {
+  const seen = new Set(existing.map((p) => normUser(p.username)))
+  const out = [...existing]
+  for (const p of incoming) {
+    const k = normUser(p.username)
+    if (!k || seen.has(k)) continue
+    seen.add(k)
+    out.push(p)
+  }
+  return out
+}
+function addPlayer() {
+  const username = addUser.value.trim()
+  if (!username) return flash('Username is required')
+  const name = addName.value.trim() || username
+  config.value = { ...config.value, players: mergePlayers(config.value.players, [{ name, username }]) }
+  addName.value = ''
+  addUser.value = ''
+}
+function removePlayer(username: string) {
+  config.value = { ...config.value, players: config.value.players.filter((p) => p.username !== username) }
+}
+function addFromCsv() {
+  const rows: TrackedPlayer[] = []
+  for (const line of csvText.value.split(/\r?\n/)) {
+    const t = line.trim()
+    if (!t) continue
+    const parts = t.split(',').map((s) => s.trim())
+    if (/^names?$/i.test(parts[0]) && /^user/i.test(parts[1] || '')) continue // header
+    const username = parts[1] || parts[0]
+    if (!username) continue
+    rows.push({ name: parts[0] || username, username })
+  }
+  if (!rows.length) return flash('No rows found — use “Name, Username” per line')
+  const before = config.value.players.length
+  config.value = { ...config.value, players: mergePlayers(config.value.players, rows) }
+  csvText.value = ''
+  flash(`Added ${config.value.players.length - before} player(s)`)
+}
+function resetDefaults() {
+  config.value = { eventId: DEFAULT_EVENT_ID, players: DEFAULT_PLAYERS.map((p) => ({ ...p })) }
+  eventDraft.value = DEFAULT_EVENT_ID
+  flash('Reset to defaults')
+}
+function clearPlayers() {
+  config.value = { ...config.value, players: [] }
 }
 
 // --- live clock for "updated N s ago" ---
@@ -57,10 +148,40 @@ function onVisible() {
 }
 
 onMounted(() => {
+  // hydrate config from localStorage (replacing the SSR defaults if present)
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY)
+    if (saved) {
+      const c = JSON.parse(saved)
+      if (c && typeof c.eventId === 'string' && Array.isArray(c.players)) {
+        config.value = {
+          eventId: c.eventId.replace(/\D/g, '') || DEFAULT_EVENT_ID,
+          players: c.players
+            .filter((p: any) => p && typeof p.username === 'string' && p.username.trim())
+            .map((p: any) => ({ name: String(p.name ?? p.username), username: String(p.username) })),
+        }
+      }
+    }
+  } catch {
+    /* ignore bad storage */
+  }
   clock = setInterval(() => (now.value = Date.now()), 1000)
   scheduleNext()
   document.addEventListener('visibilitychange', onVisible)
 })
+watch(
+  config,
+  (c) => {
+    if (import.meta.client) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(c))
+      } catch {
+        /* storage may be full/blocked */
+      }
+    }
+  },
+  { deep: true },
+)
 onBeforeUnmount(() => {
   clearInterval(clock)
   clearTimeout(poller)
@@ -215,34 +336,45 @@ async function copy(text: string, label: string) {
   flash(`Copied ${label}`)
 }
 
-const startDate = 'Sat Jun 20, 2026'
+const startDate = computed(() => {
+  const iso = event.value?.startISO
+  if (!iso) return ''
+  const t = Date.parse(iso.replace(/([+\-]\d{2})(\d{2})$/, '$1:$2'))
+  if (Number.isNaN(t)) return ''
+  return new Date(t).toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+})
 </script>
 
 <template>
   <div class="wrap">
     <header>
-      <p class="eyebrow">Disney Lorcana Challenge · Infinity Constructed</p>
-      <h1>The Crew Ledger<span class="city">Indianapolis</span></h1>
+      <p class="eyebrow">The Crew Ledger</p>
+      <h1><span class="city">{{ event?.name || 'Lorcana Tracker' }}</span></h1>
 
       <div class="meta">
         <span v-if="event?.lifecycle === 'EVENT_IN_PROGRESS'" class="live-dot"><i></i> Live</span>
-        <span class="dot" v-if="event?.lifecycle === 'EVENT_IN_PROGRESS'">·</span>
-        <span><b>{{ startDate }}</b></span>
-        <span class="dot">·</span>
-        <span>Pastimes Events, Indianapolis IN</span>
-        <span class="dot">·</span>
-        <span><b>{{ (event?.startingPlayers || 1746).toLocaleString() }}</b> players</span>
-        <span class="dot">·</span>
-        <span>
-          <template v-if="activeRound">Round <b>{{ activeRound }}</b> of {{ event?.totalRounds }}</template>
-          <template v-else-if="event">{{ event.phaseLabel || 'Swiss' }}</template>
+        <span class="dot" v-if="event?.lifecycle === 'EVENT_IN_PROGRESS' && (startDate || event?.venue)">·</span>
+        <span v-if="startDate"><b>{{ startDate }}</b></span>
+        <span class="dot" v-if="startDate && event?.venue">·</span>
+        <span v-if="event?.venue">{{ event.venue }}</span>
+        <span class="dot" v-if="event && (startDate || event.venue)">·</span>
+        <span v-if="event"><b>{{ event.startingPlayers.toLocaleString() }}</b> players</span>
+        <span class="dot" v-if="event">·</span>
+        <span v-if="event">
+          <template v-if="activeRound">Round <b>{{ activeRound }}</b> of {{ event.totalRounds }}</template>
+          <template v-else>{{ event.phaseLabel || 'Swiss' }}</template>
         </span>
       </div>
     </header>
 
     <section class="dash" aria-label="Crew summary">
       <div class="stat">
-        <div class="k">{{ found.length }}<span style="font-size:0.5em;color:var(--faint)"> / {{ crew.length || 15 }}</span></div>
+        <div class="k">{{ found.length }}<span style="font-size:0.5em;color:var(--faint)"> / {{ crew.length }}</span></div>
         <div class="l">Illumineers found</div>
       </div>
       <div class="stat">
@@ -291,8 +423,60 @@ const startDate = 'Sat Jun 20, 2026'
           <span v-if="refreshing" class="spin"></span>
           {{ refreshing ? 'Refreshing' : 'Refresh' }}
         </button>
+        <button class="btn ghost" type="button" :class="{ on: showConfig }" @click="openConfig">⚙ Configure</button>
       </div>
     </div>
+
+    <section v-if="showConfig" class="config">
+      <div class="config-head">
+        <h3>Configure tracker</h3>
+        <button class="x" type="button" aria-label="Close" @click="showConfig = false">✕</button>
+      </div>
+
+      <div class="config-row">
+        <label class="fld grow">
+          <span class="fld-l">Event ID or URL</span>
+          <input v-model="eventDraft" class="inp" placeholder="508677  or  https://…/events/508677" @keydown.enter="applyEvent" />
+        </label>
+        <button class="btn" type="button" @click="applyEvent">Track event</button>
+      </div>
+      <p class="hint">
+        Tracking <b>{{ config.eventId }}</b><template v-if="event"> · {{ event.name }}</template>
+      </p>
+
+      <div class="cp-head">Players <span class="muted">({{ config.players.length }})</span></div>
+      <ul class="cp-list">
+        <li v-for="p in config.players" :key="p.username" class="cp-item">
+          <span class="cp-name">{{ p.name }}</span>
+          <span class="cp-user">{{ p.username }}</span>
+          <button class="x" type="button" :aria-label="`Remove ${p.name}`" @click="removePlayer(p.username)">✕</button>
+        </li>
+        <li v-if="!config.players.length" class="cp-empty">No players yet — add below, paste a CSV, or reset to defaults.</li>
+      </ul>
+
+      <div class="config-row">
+        <label class="fld grow">
+          <span class="fld-l">Name</span>
+          <input v-model="addName" class="inp" placeholder="Friendly name" @keydown.enter="addPlayer" />
+        </label>
+        <label class="fld grow">
+          <span class="fld-l">PlayHub username</span>
+          <input v-model="addUser" class="inp" placeholder="username" @keydown.enter="addPlayer" />
+        </label>
+        <button class="btn ghost" type="button" @click="addPlayer">Add</button>
+      </div>
+
+      <label class="fld block">
+        <span class="fld-l">Bulk add — one per line: <code>Name, Username</code></span>
+        <textarea v-model="csvText" class="inp ta" rows="4" placeholder="Sarah, Ladyreadsalot&#10;Jason, Izik&#10;Charlie Wendt"></textarea>
+      </label>
+      <div class="config-actions">
+        <button class="btn" type="button" @click="addFromCsv">Add from CSV</button>
+        <span class="grow"></span>
+        <button class="link-btn" type="button" @click="clearPlayers">Clear all</button>
+        <button class="link-btn" type="button" @click="resetDefaults">Reset to defaults</button>
+      </div>
+    </section>
 
     <div v-if="error" class="notice error">
       Couldn’t reach Ravensburger Play. The event API may be briefly down — try Refresh in a moment.
@@ -324,15 +508,15 @@ const startDate = 'Sat Jun 20, 2026'
           </tr>
         </thead>
         <tbody>
-          <template v-for="c in crew" :key="c.tv">
+          <template v-for="c in crew" :key="c.username">
             <tr
               class="row"
-              :class="{ missing: !c.found, open: expanded.has(c.tv) }"
-              :aria-expanded="expanded.has(c.tv)"
+              :class="{ missing: !c.found, open: expanded.has(c.username) }"
+              :aria-expanded="expanded.has(c.username)"
               tabindex="0"
-              @click="toggleRow(c.tv)"
-              @keydown.enter.prevent="toggleRow(c.tv)"
-              @keydown.space.prevent="toggleRow(c.tv)"
+              @click="toggleRow(c.username)"
+              @keydown.enter.prevent="toggleRow(c.username)"
+              @keydown.space.prevent="toggleRow(c.username)"
             >
               <td class="c col-rank">
                 <div class="rank" :class="{ top: c.rank != null && c.rank <= 100 }">
@@ -346,12 +530,12 @@ const startDate = 'Sat Jun 20, 2026'
 
               <td class="col-who">
                 <div class="who">
-                  <span class="caret" :class="{ open: expanded.has(c.tv) }" aria-hidden="true">▸</span>
+                  <span class="caret" :class="{ open: expanded.has(c.username) }" aria-hidden="true">▸</span>
                   <span class="sigil" :class="{ duo: (c.liveInk?.length || 0) >= 2 }" :style="sigilStyle(c)" :title="inkTitle(c)"></span>
-                  <button class="copy" type="button" :title="`Copy ${c.playhub}`" @click.stop="copy(c.playhub, c.playhub)">
+                  <button class="copy" type="button" :title="`Copy ${c.username}`" @click.stop="copy(c.username, c.username)">
                     <span class="name">
                       {{ c.name }}
-                      <span class="sub">{{ c.playhub }}</span>
+                      <span class="sub">{{ c.username }}</span>
                     </span>
                   </button>
                 </div>
@@ -381,11 +565,17 @@ const startDate = 'Sat Jun 20, 2026'
               </td>
             </tr>
 
-            <tr v-if="expanded.has(c.tv)" class="detail-row">
+            <tr v-if="expanded.has(c.username)" class="detail-row">
               <td :colspan="5 + rounds.length">
                 <div class="detail">
-                  <div class="detail-title">Match history · {{ c.name }} <span class="sub">{{ c.tv }}</span></div>
-                  <div v-if="!c.matches.length" class="detail-empty">No matches reported yet.</div>
+                  <div class="detail-title">
+                    Match history · {{ c.name }}
+                    <span v-if="c.found && c.matchedName" class="sub">{{ c.matchedName }}</span>
+                    <span v-else class="sub not-found">not found in this event</span>
+                  </div>
+                  <div v-if="!c.matches.length" class="detail-empty">
+                    {{ c.found ? 'No matches reported yet.' : 'No player matched this username in the standings.' }}
+                  </div>
                   <ol v-else class="match-list">
                     <li v-for="mm in c.matches" :key="mm.round" class="match">
                       <span class="m-round">R{{ mm.round }}</span>
