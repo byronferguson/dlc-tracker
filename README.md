@@ -1,11 +1,11 @@
 # The Crew Ledger — Lorcana event tracker
 
 A one-page live standings tracker for our crew at a [Ravensburger Play](https://tcg.ravensburgerplay.com)
-Disney Lorcana event. It pulls the official standings, matches our 15 players by their
+Disney Lorcana event. It pulls the official standings, matches our 8 players by their
 registered display names, and shows each one's rank, record, points, tiebreakers, and
 per-round results — auto-refreshing during the event. No manual entry.
 
-Currently tracking **[Disney Lorcana Challenge: Indianapolis](https://tcg.ravensburgerplay.com/events/508677)**.
+Currently tracking **[Disney Lorcana CCQ Tournament](https://tcg.ravensburgerplay.com/events/466655)**.
 
 ## How it works
 

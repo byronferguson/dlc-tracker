@@ -7,23 +7,15 @@ export interface TrackedPlayer {
   username: string // PlayHub username/handle to match against the official standings
 }
 
-export const DEFAULT_EVENT_ID = '508677'
+export const DEFAULT_EVENT_ID = '466655'
 
-// The original crew (Disney Lorcana Challenge: Indianapolis).
 export const DEFAULT_PLAYERS: TrackedPlayer[] = [
-  { name: 'Nick', username: 'Chef_Nick' },
-  { name: 'Niki', username: 'disnerd_94' },
-  { name: 'Jason', username: 'Izik' },
-  { name: 'Sarah', username: 'Ladyreadsalot' },
-  { name: 'James', username: 'sleepy_sheeb' },
-  { name: 'Alec', username: 'beelzebuth' },
-  { name: 'Jeremy', username: 'JerpsDerps' },
-  { name: 'Matt', username: 'MOrrBridges' },
-  { name: 'Amy', username: 'AmyPond17' },
-  { name: 'Charles', username: 'siimba' },
-  { name: 'Mike', username: 'BoLing4U' },
-  { name: 'Fuchan', username: 'Richard Richey' },
-  { name: 'Max', username: 'littlei999' },
-  { name: 'Charlie', username: 'Charlie Wendt' },
-  { name: 'Justin', username: 'Malferon' },
+  { name: 'Shaheed', username: 'Goodbuddy70461' },
+  { name: 'Nick W', username: 'Wheels' },
+  { name: 'Josh', username: 'PilgrimsProcess' },
+  { name: 'Aaron W', username: 'AaronCWil' },
+  { name: 'Maddy', username: 'MaddyI' },
+  { name: 'Geoffrey', username: 'Firekraken91' },
+  { name: 'Sara', username: 'SideQuestSara' },
+  { name: 'Parker', username: 'OneWhoParks' },
 ]

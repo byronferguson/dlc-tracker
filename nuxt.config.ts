@@ -17,7 +17,7 @@ export default defineNuxtConfig({
     rbAppName: 'phoenix',
     public: {
       // the event this tracker follows; override with NUXT_PUBLIC_EVENT_ID
-      eventId: '508677',
+      eventId: '466655',
       // base poll cadence (seconds) while a round's results are still coming in;
       // the client backs off automatically once all tracked results are in
       pollSeconds: 60,
