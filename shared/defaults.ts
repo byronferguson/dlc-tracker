@@ -18,4 +18,5 @@ export const DEFAULT_PLAYERS: TrackedPlayer[] = [
   { name: 'Geoffrey', username: 'Firekraken91' },
   { name: 'Sara', username: 'SideQuestSara' },
   { name: 'Parker', username: 'OneWhoParks' },
+  { name: '@3 rock trolls in a trenchcoat', username: 'sleepysheeb' },
 ]
