@@ -27,11 +27,11 @@ export default defineNuxtConfig({
   app: {
     head: {
       htmlAttrs: { lang: 'en' },
-      title: 'The Crew Ledger · Lorcana Challenge Indianapolis',
+      title: 'The Crew Ledger · Disney Lorcana CCQ Tournament',
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-        { name: 'description', content: 'Live standings for our crew at the Disney Lorcana Challenge: Indianapolis.' },
+        { name: 'description', content: 'Live standings for our crew at the Disney Lorcana CCQ Tournament.' },
         { name: 'color-scheme', content: 'dark' },
       ],
     },
